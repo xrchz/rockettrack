@@ -27,6 +27,7 @@ const provider = new ethers.providers.JsonRpcProvider(options.rpc)
   const balancesAddress = await rocketStorage.getAddress(
     ethers.utils.keccak256(ethers.utils.toUtf8Bytes("contract.addressrocketNetworkBalances")))
   const balancesABI = JSON.parse(await fs.readFile('balancesABI.json', 'utf-8'))
+  // const oldBalancesAddress = '0x138313f102cE9a0662F826fCA977E3ab4D6e5539'
   const balancesContract = new ethers.Contract(balancesAddress, balancesABI, provider)
   console.log('creating filter')
   const filter = balancesContract.filters.BalancesUpdated()
