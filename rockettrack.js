@@ -8,6 +8,7 @@ const rocketStorageAddress = '0x1d8f8f00cfa6758d7bE78336684788Fb0ee0Fa46'
 
 program.option('-r, --rpc <url>', 'Full node RPC endpoint URL', 'http://localhost:8545')
        .option('-a, --account <addr>', 'Address of the account to calculate yields for')
+       .option('--block <num>', 'Just get exchange rate at latest block no later than this block')
        .option('-b, --balances-file <file>', 'File containing lines of balances data', 'balances.jsonl')
 program.parse()
 const options = program.opts()
@@ -117,6 +118,13 @@ async function processEvent(e) {
 
   balancesLines = (await fs.readFile(options.balancesFile, 'utf-8')).split('\n').slice(0,-1).map(l => JSON.parse(l).map(ethers.BigNumber.from))
   console.log(`Got ${balancesLines.length} balances lines`)
+
+  if (options.block) {
+    const [balancesBlock, totalEth, , rethSupply] = getBalances(parseInt(options.block))
+    const exchangeRate = oneEther.mul(totalEth).div(rethSupply)
+    console.log(`At ${balancesBlock} exchange rate: ${exchangeRate} (${fur(exchangeRate, 4, 1)})`)
+    return
+  }
 
   state.account = await provider.resolveName(options.account) || options.account
   console.log(`rETH tracking for ${state.account}`)
