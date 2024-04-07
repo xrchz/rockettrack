@@ -6,8 +6,10 @@ const fs = require('fs/promises')
 
 const rocketStorageAddress = '0x1d8f8f00cfa6758d7bE78336684788Fb0ee0Fa46'
 
+const collectBundle = (value, previous) => previous.concat([value])
+
 program.option('-r, --rpc <url>', 'Full node RPC endpoint URL', 'http://localhost:8545')
-       .option('-a, --account <addr>', 'Address of the account to calculate yields for')
+       .option('-a, --account <addr>', 'Address of the account to calculate yields for', collectBundle, [])
        .option('--block <num>', 'Just get exchange rate at latest block no later than this block')
        .option('-b, --balances-file <file>', 'File containing lines of balances data', 'balances.jsonl')
 program.parse()
@@ -82,7 +84,11 @@ async function processEvent(e) {
   if (e.event === 'Transfer') {
     const [from, to, amount] = e.args
     const tx = await provider.getTransaction(e.transactionHash)
-    if (from === state.account) {
+    if (state.account.includes(to) && state.account.includes(from)) {
+      console.log(`Ignoring inter-account transaction ${e.transactionHash}`)
+      line.length = 0
+    }
+    else if (state.account.includes(from)) {
       line.push(`-> ${fur(amount)} rETH`)
       line.push(`Rate@${balancesBlock.toString()}: ${fur(exchangeRate, 4, 1)}`)
       const ethAmount = exchangeRate.mul(amount).div(oneEther)
@@ -90,7 +96,7 @@ async function processEvent(e) {
       state.rethInAccount = state.rethInAccount.sub(amount)
       state.ethInProtocol = state.ethInProtocol.sub(ethAmount)
     }
-    else if (to === state.account) {
+    else if (state.account.includes(to)) {
       line.push(`<- ${fur(amount)} rETH`)
       line.push(`Rate@${balancesBlock.toString()}: ${fur(exchangeRate, 4, 1)}`)
       const ethAmount = exchangeRate.mul(amount).div(oneEther)
@@ -126,7 +132,9 @@ async function processEvent(e) {
     return
   }
 
-  state.account = await provider.resolveName(options.account) || options.account
+  state.account = await Promise.all(
+    options.account.map(async x => await provider.resolveName(x) || x)
+  )
   console.log(`rETH tracking for ${state.account}`)
 
   const sendFilter = rethContract.filters.Transfer(state.account)
@@ -142,7 +150,7 @@ async function processEvent(e) {
   events.sort((a, b) => a.blockNumber.lte(b.blockNumber) ? -1 : 1)
 
   console.log('Processing events');
-  (await Promise.all(events.map(processEvent))).forEach(l => console.log(l))
+  (await Promise.all(events.map(processEvent))).forEach(l => l && console.log(l))
 
   if (state.rethInAccount.eq(0)) {
     console.log(`No rETH in account`)
