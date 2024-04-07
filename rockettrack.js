@@ -73,6 +73,8 @@ function formatDate(date) {
 // BalancesUpdated(block, totalEth, stakingEth, rethSupply, time)
 // Transfer(from, to, value)
 
+const ignored = new Set()
+
 async function processEvent(e) {
   const blockNumber = e.blockNumber
   const [balancesBlock, totalEth, , rethSupply] = getBalances(blockNumber)
@@ -85,7 +87,10 @@ async function processEvent(e) {
     const [from, to, amount] = e.args
     const tx = await provider.getTransaction(e.transactionHash)
     if (state.account.includes(to) && state.account.includes(from)) {
-      console.log(`Ignoring inter-account transaction ${e.transactionHash}`)
+      if (!ignored.has(e.transactionHash)) {
+        console.log(`Ignoring inter-account transaction ${line[0]} ${line[1]} ${fur(amount)} rETH`)
+        ignored.add(e.transactionHash)
+      }
       line.length = 0
     }
     else if (state.account.includes(from)) {
