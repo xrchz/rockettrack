@@ -20,6 +20,7 @@ const oneEther = ethers.utils.parseUnits('1', 'ether')
 const provider = new ethers.providers.JsonRpcProvider(options.rpc)
 
 // BalancesUpdated(block, totalEth, stakingEth, rethSupply, time)
+// BalancesUpdated(block, slotTimestamp, totalEth, stakingEth, rethSupply, time)
 
 ;(async () => {
   const rocketStorage = new ethers.Contract(
