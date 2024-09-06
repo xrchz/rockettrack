@@ -1,11 +1,12 @@
 {
   "name": "rockettrack",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "license": "GPL-3.0-or-later",
   "description": "Calculate the rocket ether staking yields for an account",
   "bin": "./rockettrack.js",
+  "type": "module",
   "dependencies": {
-    "commander": ">=9.4.0",
-    "ethers": ">=5.6.9"
+    "commander": "9",
+    "ethers": "6"
   }
 }

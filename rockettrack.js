@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-const { program } = require('commander')
-const ethers = require('ethers')
-const fs = require('fs/promises')
+import { program } from 'commander'
+import { ethers } from 'ethers'
+import fs from 'fs/promises'
 
 const rocketStorageAddress = '0x1d8f8f00cfa6758d7bE78336684788Fb0ee0Fa46'
 
@@ -15,46 +15,46 @@ program.option('-r, --rpc <url>', 'Full node RPC endpoint URL', 'http://localhos
 program.parse()
 const options = program.opts()
 
-const oneEther = ethers.utils.parseUnits('1', 'ether')
+const oneEther = ethers.parseUnits('1', 'ether')
 
-const provider = new ethers.providers.JsonRpcProvider(options.rpc)
+const provider = new ethers.JsonRpcProvider(options.rpc)
 
 const state = {
   account: undefined,
-  ethInProtocol: ethers.BigNumber.from(0),
-  rethInAccount: ethers.BigNumber.from(0)
+  ethInProtocol: 0n,
+  rethInAccount: 0n
 }
 
-const fu = ethers.utils.formatUnits
+const fu = ethers.formatUnits
 
 function fur(n, dps, digits) {
   dps = dps || 3
   digits = digits || 4
-  const sh = 10 ** (18 - dps)
-  const [x, y] = ethers.utils.formatUnits(n.div(sh).mul(sh)).split('.')
+  const sh = 10n ** (18n - BigInt(dps))
+  const [x, y] = ethers.formatUnits((n / sh) * sh).split('.')
   return [x.padStart(digits, ' '), y.padEnd(dps, '0')].join('.')
 }
 
 let balancesLines
 
 function getBalances(blockNumber) {
-  if (balancesLines.at(-1)[0].lt(blockNumber)) {
+  if (balancesLines.at(-1)[0] < blockNumber) {
     console.log('Warning: may need to update balances - using last available')
     return balancesLines.at(-1)
   }
-  if (balancesLines.at(0)[0].gt(blockNumber)) {
+  if (balancesLines.at(0)[0] > blockNumber) {
     console.log('Error: requested block before first balances')
     process.exit(1)
   }
-  let a = ethers.BigNumber.from(0)
-  let b = ethers.BigNumber.from(balancesLines.length)
-  while (b.sub(a).gt(1)) {
-    let m = a.add(b.sub(a).div(2))
-    if (balancesLines[m.toNumber()][0].gt(blockNumber))
+  let a = 0n
+  let b = BigInt(balancesLines.length)
+  while (b - a > 1n) {
+    let m = a + ((b - a) / 2n)
+    if (balancesLines[parseInt(m)][0] > blockNumber)
       b = m
     else a = m
   }
-  return balancesLines[a.toNumber()]
+  return balancesLines[parseInt(a)]
 }
 
 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -70,20 +70,20 @@ function formatDate(date) {
   return a.join(' ')
 }
 
-// BalancesUpdated(block, totalEth, stakingEth, rethSupply, time)
+// BalancesUpdated(block, slotTimestamp, totalEth, stakingEth, rethSupply, time)
 // Transfer(from, to, value)
 
 const ignored = new Set()
 
 async function processEvent(e) {
   const blockNumber = e.blockNumber
-  const [balancesBlock, totalEth, , rethSupply] = getBalances(blockNumber)
-  const exchangeRate = oneEther.mul(totalEth).div(rethSupply)
-  const block = await provider.getBlock(blockNumber.toHexString())
+  const [balancesBlock, , totalEth, , rethSupply] = getBalances(blockNumber)
+  const exchangeRate = oneEther * totalEth / rethSupply
+  const block = await provider.getBlock(blockNumber)
   const timestamp = block.timestamp
   const date = new Date(timestamp * 1000)
   const line = [e.transactionHash, formatDate(date)]
-  if (e.event === 'Transfer') {
+  if (e.eventName === 'Transfer') {
     const [from, to, amount] = e.args
     const tx = await provider.getTransaction(e.transactionHash)
     if (state.account.includes(to) && state.account.includes(from)) {
@@ -96,18 +96,18 @@ async function processEvent(e) {
     else if (state.account.includes(from)) {
       line.push(`-> ${fur(amount)} rETH`)
       line.push(`Rate@${balancesBlock.toString()}: ${fur(exchangeRate, 4, 1)}`)
-      const ethAmount = exchangeRate.mul(amount).div(oneEther)
+      const ethAmount = exchangeRate * amount / oneEther
       line.push(`<- ${fur(ethAmount)} ETH`)
-      state.rethInAccount = state.rethInAccount.sub(amount)
-      state.ethInProtocol = state.ethInProtocol.sub(ethAmount)
+      state.rethInAccount = state.rethInAccount - amount
+      state.ethInProtocol = state.ethInProtocol - ethAmount
     }
     else if (state.account.includes(to)) {
       line.push(`<- ${fur(amount)} rETH`)
       line.push(`Rate@${balancesBlock.toString()}: ${fur(exchangeRate, 4, 1)}`)
-      const ethAmount = exchangeRate.mul(amount).div(oneEther)
+      const ethAmount = exchangeRate * amount / oneEther
       line.push(`-> ${fur(ethAmount)} ETH`)
-      state.rethInAccount = state.rethInAccount.add(amount)
-      state.ethInProtocol = state.ethInProtocol.add(ethAmount)
+      state.rethInAccount = state.rethInAccount + amount
+      state.ethInProtocol = state.ethInProtocol + ethAmount
     }
     else {
       console.log(`Error: ${e.transactionHash} Transfer from/to wrong account: ${from}/${to}`)
@@ -119,56 +119,53 @@ async function processEvent(e) {
   return line.join(' ')
 }
 
-;(async () => {
-  const rocketStorage = new ethers.Contract(
-    rocketStorageAddress, ["function getAddress(bytes32 key) view returns (address)"], provider)
-  const rethAddress = await rocketStorage.getAddress(
-    ethers.utils.keccak256(ethers.utils.toUtf8Bytes("contract.addressrocketTokenRETH")))
-  const rethABI = JSON.parse(await fs.readFile('rethABI.json', 'utf-8'))
-  const rethContract = new ethers.Contract(rethAddress, rethABI, provider)
+const rocketStorage = new ethers.Contract(
+  rocketStorageAddress, ["function getAddress(bytes32 key) view returns (address)"], provider)
+const rethAddress = await rocketStorage['getAddress(bytes32)'](ethers.id("contract.addressrocketTokenRETH"))
+const rethABI = JSON.parse(await fs.readFile('rethABI.json', 'utf-8'))
+const rethContract = new ethers.Contract(rethAddress, rethABI, provider)
 
-  balancesLines = (await fs.readFile(options.balancesFile, 'utf-8')).split('\n').slice(0,-1).map(l => JSON.parse(l).map(ethers.BigNumber.from))
-  console.log(`Got ${balancesLines.length} balances lines`)
+balancesLines = (await fs.readFile(options.balancesFile, 'utf-8')).split('\n').slice(0,-1).map(l => JSON.parse(l).map(BigInt))
+console.log(`Got ${balancesLines.length} balances lines`)
 
-  if (options.block) {
-    const [balancesBlock, totalEth, , rethSupply] = getBalances(parseInt(options.block))
-    const exchangeRate = oneEther.mul(totalEth).div(rethSupply)
-    console.log(`At ${balancesBlock} exchange rate: ${exchangeRate} (${fur(exchangeRate, 4, 1)})`)
-    return
-  }
+if (options.block) {
+  const [balancesBlock, , totalEth, , rethSupply] = getBalances(parseInt(options.block))
+  const exchangeRate = oneEther * totalEth / rethSupply
+  console.log(`At ${balancesBlock} exchange rate: ${exchangeRate} (${fur(exchangeRate, 4, 1)})`)
+  process.exit()
+}
 
-  state.account = await Promise.all(
-    options.account.map(async x => await provider.resolveName(x) || x)
-  )
-  console.log(`rETH tracking for ${state.account}`)
+state.account = await Promise.all(
+  options.account.map(async x => await provider.resolveName(x) || x)
+)
+console.log(`rETH tracking for ${state.account}`)
 
-  const sendFilter = rethContract.filters.Transfer(state.account)
-  const recvFilter = rethContract.filters.Transfer(null, state.account)
+const sendFilter = rethContract.filters.Transfer(state.account)
+const recvFilter = rethContract.filters.Transfer(null, state.account)
 
-  console.log('Retrieving send events')
-  const sendEvents = await rethContract.queryFilter(sendFilter)
-  console.log('Retrieving receive events')
-  const recvEvents = await rethContract.queryFilter(recvFilter)
+console.log('Retrieving send events')
+const sendEvents = await rethContract.queryFilter(sendFilter)
+console.log('Retrieving receive events')
+const recvEvents = await rethContract.queryFilter(recvFilter)
 
-  console.log('Sorting events')
-  const events = sendEvents.concat(recvEvents).map(e => ({...e, blockNumber: ethers.BigNumber.from(e.blockNumber)}))
-  events.sort((a, b) => a.blockNumber.lte(b.blockNumber) ? -1 : 1)
+console.log('Sorting events')
+const events = sendEvents.concat(recvEvents)
+events.sort((a, b) => a.blockNumber <= b.blockNumber ? -1 : 1)
 
-  console.log('Processing events');
-  (await Promise.all(events.map(processEvent))).forEach(l => l && console.log(l))
+console.log('Processing events');
+(await Promise.all(events.map(processEvent))).forEach(l => l && console.log(l))
 
-  if (state.rethInAccount.eq(0)) {
-    console.log(`No rETH in account`)
-    return
-  }
-
+if (state.rethInAccount == 0n) {
+  console.log(`No rETH in account`)
+}
+else {
   console.log('Calculating return')
   const primaryRate = await rethContract.getExchangeRate()
-  const accountRate = oneEther.mul(state.ethInProtocol).div(state.rethInAccount)
+  const accountRate = oneEther * state.ethInProtocol / state.rethInAccount
   console.log(`Net balance: ${fu(state.rethInAccount)} rETH acquired at a cost of ${fu(state.ethInProtocol)} ETH`)
   console.log(`Account rETH price: ${fu(accountRate)} ETH`)
   console.log(`Current rETH price: ${fu(primaryRate)} ETH`)
-  const currentValue = state.rethInAccount.mul(primaryRate).div(oneEther)
+  const currentValue = state.rethInAccount * primaryRate / oneEther
   console.log(`${fu(currentValue)} ETH's worth of rETH acquired for the above cost`)
-  console.log(`Staking return: ${fu(currentValue.sub(state.ethInProtocol))} ETH`)
-})()
+  console.log(`Staking return: ${fu(currentValue - state.ethInProtocol)} ETH`)
+}
